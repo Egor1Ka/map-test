@@ -1,5 +1,5 @@
-import React, { useCallback, useState, useRef, useEffect } from "react";
-import { GoogleMap, LoadScript, MarkerClusterer } from "@react-google-maps/api";
+import React, { useCallback, useState, useRef, useEffect } from 'react';
+import { GoogleMap, LoadScript, MarkerClusterer } from '@react-google-maps/api';
 import {
   collection,
   addDoc,
@@ -8,12 +8,12 @@ import {
   doc,
   setDoc,
   writeBatch,
-} from "firebase/firestore";
-import { db } from "../fireBase/firebaseConfig";
+} from 'firebase/firestore';
+import { db } from '../fireBase/firebaseConfig';
 
 const containerStyle = {
-  width: "100%",
-  height: "100%",
+  width: '100%',
+  height: '100%',
 };
 
 const center = {
@@ -35,7 +35,7 @@ export const MapComponent: React.FC = () => {
   useEffect(() => {
     const loadMarkers = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "markers"));
+        const querySnapshot = await getDocs(collection(db, 'markers'));
         const markersData = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           lat: doc.data().lat,
@@ -43,7 +43,7 @@ export const MapComponent: React.FC = () => {
         }));
         setMarkers(markersData);
       } catch (error) {
-        console.error("Error loading markers:", error);
+        console.error('Error loading markers:', error);
       }
     };
 
@@ -61,7 +61,7 @@ export const MapComponent: React.FC = () => {
         setMarkers(updatedMarkers);
 
         try {
-          const markerDoc = doc(db, "markers", id);
+          const markerDoc = doc(db, 'markers', id);
           await setDoc(
             markerDoc,
             {
@@ -70,9 +70,9 @@ export const MapComponent: React.FC = () => {
             },
             { merge: true }
           );
-          console.log("Updated marker:", id);
+          console.log('Updated marker:', id);
         } catch (error) {
-          console.error("Error updating marker:", error);
+          console.error('Error updating marker:', error);
         }
       }
     },
@@ -88,10 +88,10 @@ export const MapComponent: React.FC = () => {
       setMarkers((current) => current.filter((marker) => marker.id !== id));
 
       try {
-        const markerDoc = doc(db, "markers", id);
+        const markerDoc = doc(db, 'markers', id);
         await deleteDoc(markerDoc);
       } catch (error) {
-        console.error("Error deleting marker:", error);
+        console.error('Error deleting marker:', error);
       }
     },
     [markers]
@@ -108,13 +108,13 @@ export const MapComponent: React.FC = () => {
           });
 
           markerElement.addListener(
-            "dragend",
+            'dragend',
             (event: google.maps.MapMouseEvent) => {
               onMarkerDragEnd(event, marker.id);
             }
           );
 
-          markerElement.addListener("dblclick", () => {
+          markerElement.addListener('dblclick', () => {
             deleteMarker(marker.id);
           });
 
@@ -127,7 +127,7 @@ export const MapComponent: React.FC = () => {
   const onMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
     if (e.latLng) {
       const newMarker = {
-        id: "",
+        id: '',
         lat: e.latLng.lat(),
         lng: e.latLng.lng(),
       };
@@ -135,10 +135,26 @@ export const MapComponent: React.FC = () => {
       setMarkers((current) => [...current, newMarker]);
 
       try {
-        const docRef = await addDoc(collection(db, "markers"), {
+        const docRef = await addDoc(collection(db, 'markers'), {
           lat: newMarker.lat,
           lng: newMarker.lng,
         });
+
+        console.log(newMarker);
+        const createActor = await fetch(
+          'https://tt3w13vopy.apigw.corezoid.com/mainrRceiver',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              event: 'createActor',
+              newMarker: {
+                lat: newMarker.lat,
+                lng: newMarker.lng,
+              },
+            }),
+          }
+        );
+
         newMarker.id = docRef.id;
         setMarkers((current) => {
           return current.map((marker) =>
@@ -148,17 +164,17 @@ export const MapComponent: React.FC = () => {
           );
         });
       } catch (error) {
-        console.error("Error adding marker:", error);
+        console.error('Error adding marker:', error);
       }
     }
   }, []);
 
   const deleteAllMarkers = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, "markers"));
+      const querySnapshot = await getDocs(collection(db, 'markers'));
       const batch = writeBatch(db);
       querySnapshot.forEach((markerDoc) => {
-        const markerRef = doc(db, "markers", markerDoc.id);
+        const markerRef = doc(db, 'markers', markerDoc.id);
         batch.delete(markerRef);
       });
       await batch.commit();
@@ -171,13 +187,13 @@ export const MapComponent: React.FC = () => {
 
       setMarkers([]);
     } catch (error) {
-      console.error("Error deleting all markers:", error);
+      console.error('Error deleting all markers:', error);
     }
   };
 
   return (
-    <LoadScript googleMapsApiKey="AIzaSyDhKtOGdR803kiu30NDWLl1Jm127BiPwOo">
-      <div style={{ position: "relative", height: "100%" }}>
+    <LoadScript googleMapsApiKey='AIzaSyDhKtOGdR803kiu30NDWLl1Jm127BiPwOo'>
+      <div style={{ position: 'relative', height: '100%' }}>
         <GoogleMap
           mapContainerStyle={containerStyle}
           center={center}
@@ -199,7 +215,7 @@ export const MapComponent: React.FC = () => {
         </GoogleMap>
         <button
           onClick={deleteAllMarkers}
-          style={{ position: "absolute", bottom: 30, left: 10, zIndex: 10 }}
+          style={{ position: 'absolute', bottom: 30, left: 10, zIndex: 10 }}
         >
           Delete All Markers
         </button>
