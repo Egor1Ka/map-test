@@ -1,15 +1,11 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { GoogleMap, LoadScript, MarkerClusterer } from '@react-google-maps/api';
 import {
-  collection,
-  addDoc,
-  getDocs,
-  deleteDoc,
-  doc,
-  setDoc,
-  writeBatch,
-} from 'firebase/firestore';
-import { db } from '../fireBase/firebaseConfig';
+  GoogleMap,
+  LoadScript,
+  MarkerClusterer,
+  DirectionsService,
+  DirectionsRenderer,
+} from '@react-google-maps/api';
 
 const containerStyle = {
   width: '100%',
@@ -30,28 +26,13 @@ interface MarkerData {
 
 export const MapComponent: React.FC = () => {
   const [markers, setMarkers] = useState<MarkerData[]>([]);
+  const [directions, setDirections] = useState<google.maps.DirectionsResult[]>(
+    []
+  );
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  useEffect(() => {
-    const loadMarkers = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'markers'));
-        const markersData = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          lat: doc.data().lat,
-          lng: doc.data().lng,
-        }));
-        setMarkers(markersData);
-      } catch (error) {
-        console.error('Error loading markers:', error);
-      }
-    };
-
-    loadMarkers();
-  }, []);
-
   const onMarkerDragEnd = useCallback(
-    async (event: google.maps.MapMouseEvent, id: string) => {
+    (event: google.maps.MapMouseEvent, id: string) => {
       if (event.latLng) {
         const updatedMarkers = markers.map((marker) =>
           marker.id === id
@@ -59,40 +40,18 @@ export const MapComponent: React.FC = () => {
             : marker
         );
         setMarkers(updatedMarkers);
-
-        try {
-          const markerDoc = doc(db, 'markers', id);
-          await setDoc(
-            markerDoc,
-            {
-              lat: event.latLng!.lat(),
-              lng: event.latLng!.lng(),
-            },
-            { merge: true }
-          );
-          console.log('Updated marker:', id);
-        } catch (error) {
-          console.error('Error updating marker:', error);
-        }
       }
     },
     [markers]
   );
 
   const deleteMarker = useCallback(
-    async (id: string) => {
+    (id: string) => {
       const marker = markers.find((marker) => marker.id === id);
       if (marker && marker.element) {
         marker.element.setMap(null);
       }
       setMarkers((current) => current.filter((marker) => marker.id !== id));
-
-      try {
-        const markerDoc = doc(db, 'markers', id);
-        await deleteDoc(markerDoc);
-      } catch (error) {
-        console.error('Error deleting marker:', error);
-      }
     },
     [markers]
   );
@@ -124,71 +83,101 @@ export const MapComponent: React.FC = () => {
     }
   }, [markers, deleteMarker, onMarkerDragEnd]);
 
-  const onMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
+  const onMapClick = async (e: google.maps.MapMouseEvent) => {
+    console.log('e', e);
     if (e.latLng) {
-      const newMarker = {
-        id: '',
+      const newMarker: MarkerData = {
+        id: `${e.latLng.lat()}_${e.latLng.lng()}`,
         lat: e.latLng.lat(),
         lng: e.latLng.lng(),
       };
-
       setMarkers((current) => [...current, newMarker]);
 
-      try {
-        const docRef = await addDoc(collection(db, 'markers'), {
-          lat: newMarker.lat,
-          lng: newMarker.lng,
-        });
+      const createActor = await fetch(
+        'https://tt3w13vopy.apigw.corezoid.com/mainrRceiver',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            event: 'createActor',
+            newMarker: {
+              id: newMarker.id,
+              lat: newMarker.lat,
+              lng: newMarker.lng,
+            },
+          }),
+        }
+      );
+    }
+  };
 
-        console.log(newMarker);
-        const createActor = await fetch(
-          'https://tt3w13vopy.apigw.corezoid.com/mainrRceiver',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              event: 'createActor',
-              newMarker: {
-                lat: newMarker.lat,
-                lng: newMarker.lng,
-              },
-            }),
-          }
+  const deleteAllMarkers = () => {
+    markers.forEach((marker) => {
+      if (marker.element) {
+        marker.element.setMap(null);
+      }
+    });
+
+    setMarkers([]);
+    setDirections([]);
+  };
+
+  const calculateRoute = async () => {
+    if (markers.length < 2) {
+      alert('You need at least two markers to calculate a route');
+      return;
+    }
+
+    const lastMarker = markers[markers.length - 1];
+    const previousRouteEnd =
+      directions.length > 0
+        ? directions[directions.length - 1].routes[0].legs[
+            directions[directions.length - 1].routes[0].legs.length - 1
+          ].end_location
+        : null;
+
+    const origin = previousRouteEnd
+      ? new google.maps.LatLng(previousRouteEnd.lat(), previousRouteEnd.lng())
+      : new google.maps.LatLng(
+          markers[markers.length - 2].lat,
+          markers[markers.length - 2].lng
         );
 
-        newMarker.id = docRef.id;
-        setMarkers((current) => {
-          return current.map((marker) =>
-            marker.lat === newMarker.lat && marker.lng === newMarker.lng
-              ? newMarker
-              : marker
-          );
-        });
-      } catch (error) {
-        console.error('Error adding marker:', error);
-      }
-    }
-  }, []);
+    const destination = new google.maps.LatLng(lastMarker.lat, lastMarker.lng);
 
-  const deleteAllMarkers = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, 'markers'));
-      const batch = writeBatch(db);
-      querySnapshot.forEach((markerDoc) => {
-        const markerRef = doc(db, 'markers', markerDoc.id);
-        batch.delete(markerRef);
-      });
-      await batch.commit();
+    const directionsService = new google.maps.DirectionsService();
+    directionsService.route(
+      {
+        origin: origin,
+        destination: destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === google.maps.DirectionsStatus.OK && result) {
+          setDirections((prev) => [...prev, result]);
 
-      markers.forEach((marker) => {
-        if (marker.element) {
-          marker.element.setMap(null);
+          // Вывод маршрута в консоль
+          const route = {
+            from: { lat: origin.lat(), lng: origin.lng() },
+            to: { lat: destination.lat(), lng: destination.lng() },
+          };
+          console.log('New route added:', route);
+        } else {
+          console.error(`Error fetching directions ${result}`);
         }
-      });
+      }
+    );
 
-      setMarkers([]);
-    } catch (error) {
-      console.error('Error deleting all markers:', error);
-    }
+    const createLink = await fetch(
+      'https://tt3w13vopy.apigw.corezoid.com/mainrRceiver',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          event: 'createLink',
+          from: { lat: origin.lat(), lng: origin.lng() },
+          to: { lat: destination.lat(), lng: destination.lng() },
+        }),
+      }
+    );
   };
 
   return (
@@ -212,12 +201,22 @@ export const MapComponent: React.FC = () => {
               </>
             )}
           </MarkerClusterer>
+
+          {directions.map((dir, index) => (
+            <DirectionsRenderer key={index} directions={dir} />
+          ))}
         </GoogleMap>
         <button
           onClick={deleteAllMarkers}
           style={{ position: 'absolute', bottom: 30, left: 10, zIndex: 10 }}
         >
           Delete All Markers
+        </button>
+        <button
+          onClick={calculateRoute}
+          style={{ position: 'absolute', bottom: 30, left: 150, zIndex: 10 }}
+        >
+          Calculate Route
         </button>
       </div>
     </LoadScript>
