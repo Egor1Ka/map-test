@@ -6,6 +6,7 @@ import {
   DirectionsService,
   DirectionsRenderer,
 } from '@react-google-maps/api';
+import { v4 as uuidv4 } from 'uuid';
 
 const containerStyle = {
   width: '100%',
@@ -87,10 +88,12 @@ export const MapComponent: React.FC = () => {
     console.log('e', e);
     if (e.latLng) {
       const newMarker: MarkerData = {
-        id: `${e.latLng.lat()}_${e.latLng.lng()}`,
+        id: uuidv4(),
         lat: e.latLng.lat(),
         lng: e.latLng.lng(),
       };
+
+      console.log('newMarker', newMarker);
       setMarkers((current) => [...current, newMarker]);
 
       const createActor = await fetch(
@@ -100,7 +103,7 @@ export const MapComponent: React.FC = () => {
           body: JSON.stringify({
             event: 'createActor',
             newMarker: {
-              id: newMarker.id,
+              id: newMarker.id, // Отправка уникального ID
               lat: newMarker.lat,
               lng: newMarker.lng,
             },
@@ -127,20 +130,26 @@ export const MapComponent: React.FC = () => {
       return;
     }
 
+    let origin: google.maps.LatLng;
     const lastMarker = markers[markers.length - 1];
-    const previousRouteEnd =
-      directions.length > 0
-        ? directions[directions.length - 1].routes[0].legs[
-            directions[directions.length - 1].routes[0].legs.length - 1
-          ].end_location
-        : null;
 
-    const origin = previousRouteEnd
-      ? new google.maps.LatLng(previousRouteEnd.lat(), previousRouteEnd.lng())
-      : new google.maps.LatLng(
-          markers[markers.length - 2].lat,
-          markers[markers.length - 2].lng
-        );
+    if (directions.length > 0) {
+      // Если есть уже проложенные маршруты, берем последнюю точку маршрута
+      const previousRouteEnd =
+        directions[directions.length - 1].routes[0].legs[
+          directions[directions.length - 1].routes[0].legs.length - 1
+        ].end_location;
+      origin = new google.maps.LatLng(
+        previousRouteEnd.lat(),
+        previousRouteEnd.lng()
+      );
+    } else {
+      // Если маршрутов нет, точка отправления — предпоследняя точка
+      origin = new google.maps.LatLng(
+        markers[markers.length - 2].lat,
+        markers[markers.length - 2].lng
+      );
+    }
 
     const destination = new google.maps.LatLng(lastMarker.lat, lastMarker.lng);
 
@@ -173,8 +182,19 @@ export const MapComponent: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({
           event: 'createLink',
-          from: { lat: origin.lat(), lng: origin.lng() },
-          to: { lat: destination.lat(), lng: destination.lng() },
+          from: {
+            id:
+              directions.length > 0
+                ? markers[markers.length - 2].id
+                : markers[markers.length - 2].id, // ID точки отправления
+            lat: origin.lat(),
+            lng: origin.lng(),
+          },
+          to: {
+            id: lastMarker.id, // ID точки прибытия
+            lat: destination.lat(),
+            lng: destination.lng(),
+          },
         }),
       }
     );
